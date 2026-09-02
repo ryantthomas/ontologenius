@@ -16,6 +16,25 @@ import { progress } from "../graph/study";
 import { addConcepts, addItems, openScheme, relate, type WriteResult } from "../graph/write";
 import type { Ontology } from "../ontology/schema";
 
+/**
+ * How to use the contract. Shared by both drivers so the MCP connector and the
+ * on-site agent are told the same thing — the guidance is part of the contract,
+ * not of either adapter.
+ */
+export const CONTRACT_INSTRUCTIONS = [
+  "Build and study ontology-governed knowledge graphs.",
+  "",
+  "To build a topic: call open_scheme, then add_concepts (each needs a source), then relate them",
+  "with PREREQUISITE_OF so a learning path exists, then add_items so the concepts can actually be",
+  "studied. A concept with no items can never be mastered and blocks everything downstream of it.",
+  "",
+  "Writes are checked against the ontology. Nothing throws: each call reports what it accepted and",
+  "what it rejected with reasons, so read the rejections and resend corrected input.",
+  "",
+  "Before extending an existing topic, call progress — it reports the learner's weakest concepts",
+  "and which concepts still lack questions.",
+].join("\n");
+
 export interface ToolDefinition {
   name: string;
   title: string;

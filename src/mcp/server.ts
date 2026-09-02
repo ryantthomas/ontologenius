@@ -13,7 +13,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadOntology, openGraph, type Graph } from "../graph/db";
-import { buildTools } from "../tools/contract";
+import { CONTRACT_INSTRUCTIONS, buildTools } from "../tools/contract";
 
 const GRAPH_PATH = process.env.GRAPH_PATH ?? "./data/demo";
 const ONTOLOGY_PATH = process.env.ONTOLOGY_PATH ?? "ontology/base.yaml";
@@ -21,18 +21,7 @@ const ONTOLOGY_PATH = process.env.ONTOLOGY_PATH ?? "ontology/base.yaml";
 export async function createServer(graph: Graph): Promise<McpServer> {
   const server = new McpServer(
     { name: "ontologenius", version: "0.1.0" },
-    {
-      instructions:
-        "Build and study ontology-governed knowledge graphs.\n\n" +
-        "To build a topic: call open_scheme, then add_concepts (each needs a source), then relate " +
-        "them with PREREQUISITE_OF so a learning path exists, then add_items so the concepts can " +
-        "actually be studied. A concept with no items can never be mastered and blocks everything " +
-        "downstream of it.\n\n" +
-        "Writes are checked against the ontology. Nothing throws: each call reports what it accepted " +
-        "and what it rejected with reasons, so read the rejections and resend corrected input.\n\n" +
-        "Before extending an existing topic, call progress — it reports the learner's weakest concepts " +
-        "and which concepts still lack questions.",
-    },
+    { instructions: CONTRACT_INSTRUCTIONS },
   );
 
   for (const tool of buildTools(graph.ontology)) {
