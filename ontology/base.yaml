@@ -1,0 +1,153 @@
+# Upper ontology — invented once, shared by every topic.
+#
+# This file compiles to LadybugDB DDL. The database then enforces it: a write
+# with an unknown node type, an unknown relation, a relation between the wrong
+# endpoints, or a value outside an enum is rejected by the engine. No validation
+# code in the application layer.
+#
+# Domain overlays in ontology/domains/*.yaml may add subtypes and controlled
+# vocabulary. They may not remove or loosen anything declared here.
+
+version: 1
+
+# ---------------------------------------------------------------------------
+# Controlled vocabularies (nomenclature). Enforced as enums.
+# ---------------------------------------------------------------------------
+enums:
+  # Anderson & Krathwohl (2001), knowledge dimension.
+  knowledge_type: [factual, conceptual, procedural, metacognitive]
+
+  # Anderson & Krathwohl (2001), cognitive process dimension.
+  bloom_level: [remember, understand, apply, analyze, evaluate, create]
+
+  item_format: [cloze, multiple_choice, short_answer]
+
+  # Provenance quality of the asserting source.
+  source_kind: [primary_spec, peer_reviewed, textbook, documentation, secondary, model_assertion]
+
+# ---------------------------------------------------------------------------
+# Node types
+# ---------------------------------------------------------------------------
+nodes:
+  Scheme:                       # skos:ConceptScheme — one learning topic
+    key: id
+    properties:
+      id: string
+      title: string
+      description: string
+      created_at: timestamp
+
+  Concept:                      # skos:Concept — the unit of learning and mastery
+    key: id
+    properties:
+      id: string
+      pref_label: string        # skos:prefLabel — unique within a Scheme
+      notation: string?         # skos:notation — domain identifier, if any
+      definition: string        # one paragraph, self-contained
+      knowledge_type: enum(knowledge_type)
+      difficulty_hint: double?  # 0..1, seeds BKT priors; refined by responses
+      embedding: float[384]?    # all-MiniLM-L6-v2, run locally — see docs/evidence.md
+      created_at: timestamp
+
+  Term:                         # nomenclature: a lexical form pointing at a Concept
+    key: id
+    properties:
+      id: string
+      text: string
+      is_preferred: bool        # skos:prefLabel vs skos:altLabel
+      language: string
+
+  Item:                         # a retrieval-practice question
+    key: id
+    properties:
+      id: string
+      format: enum(item_format)
+      bloom_level: enum(bloom_level)
+      stem: string              # cloze text with {{blank}}, or the MCQ question
+      answer: string
+      distractors: string[]     # MCQ only; drawn from misconceptions/siblings
+      rationale: string         # shown as corrective feedback (Hattie 2007)
+      created_at: timestamp
+
+  Misconception:                # a known wrong model; sources MCQ distractors
+    key: id
+    properties:
+      id: string
+      statement: string
+      why_wrong: string
+
+  Source:                       # provenance — every assertion is attributable
+    key: id
+    properties:
+      id: string
+      kind: enum(source_kind)
+      citation: string
+      url: string?
+      retrieved_at: timestamp
+
+  Learner:
+    key: id
+    properties:
+      id: string
+      created_at: timestamp
+
+# ---------------------------------------------------------------------------
+# Relation types. from/to are enforced by the engine.
+# ---------------------------------------------------------------------------
+relations:
+  IN_SCHEME:       { from: Concept,     to: Scheme }
+  BROADER:         { from: Concept,     to: Concept }   # skos:broader — taxonomy
+  RELATED:         { from: Concept,     to: Concept }   # skos:related — associative
+  PREREQUISITE_OF: { from: Concept,     to: Concept }   # Doignon & Falmagne (1985)
+  CONTRASTS_WITH:  { from: Concept,     to: Concept }   # confusable pairs -> distractors
+  EXEMPLIFIES:     { from: Concept,     to: Concept }
+  LABELS:          { from: Term,        to: Concept }
+  ASSESSES:        { from: Item,        to: Concept }
+  ADDRESSES:       { from: Item,        to: Misconception }
+  HOLDS:           { from: Concept,     to: Misconception }
+  CITES:           { from: Concept,     to: Source }
+  CITES_ITEM:      { from: Item,        to: Source }
+
+  # Learner state lives on the graph so the model can read progress back
+  # through the same tool contract the site renders from.
+  MASTERY:
+    from: Learner
+    to: Concept
+    properties:
+      p_known: double           # BKT posterior — Corbett & Anderson (1995)
+      attempts: int64
+      correct: int64
+      last_seen: timestamp
+
+  SCHEDULED:
+    from: Learner
+    to: Item
+    properties:
+      due: timestamp            # FSRS state — ts-fsrs owns these fields
+      stability: double
+      difficulty: double
+      reps: int64
+      lapses: int64
+      last_review: timestamp
+
+  ANSWERED:                     # append-only event log; analytics read this
+    from: Learner
+    to: Item
+    properties:
+      at: timestamp
+      correct: bool
+      rating: int64             # FSRS 1-4 (again/hard/good/easy)
+      latency_ms: int64
+      response: string
+
+# ---------------------------------------------------------------------------
+# Constraints checked by the ontology compiler before any write is accepted.
+# ---------------------------------------------------------------------------
+constraints:
+  - every Concept has exactly one IN_SCHEME
+  - every Concept has at least one CITES              # no unsourced assertions
+  - pref_label is unique within a Scheme              # nomenclature discipline
+  - PREREQUISITE_OF is acyclic                        # learning paths must exist
+  - BROADER is acyclic
+  - every Item has exactly one ASSESSES
+  - multiple_choice Items have at least 2 distractors
