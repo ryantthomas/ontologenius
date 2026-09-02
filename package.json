@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Ontology-governed knowledge graph tutor — build a graph on any topic via MCP, study it with evidence-based retrieval practice.",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "scripts": {
     "seed": "tsx scripts/seed.ts",
     "test": "vitest run",

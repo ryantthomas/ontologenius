@@ -123,12 +123,17 @@ relations:
     from: Learner
     to: Item
     properties:
-      due: timestamp            # FSRS state — ts-fsrs owns these fields
+      # The complete FSRS card, so scheduling round-trips through the graph
+      # without losing state. ts-fsrs owns the semantics of these fields.
+      due: timestamp
       stability: double
       difficulty: double
       reps: int64
       lapses: int64
-      last_review: timestamp
+      state: int64              # ts-fsrs State: new/learning/review/relearning
+      scheduled_days: int64
+      learning_steps: int64
+      last_review: timestamp?
 
   ANSWERED:                     # append-only event log; analytics read this
     from: Learner
