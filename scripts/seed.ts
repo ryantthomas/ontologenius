@@ -5,8 +5,8 @@
  *   npm run seed              -> writes ./data/demo
  *   npm run seed -- :memory:  -> throwaway
  */
-import { loadOntology, openGraph } from "../src/graph/db.js";
-import { addConcepts, addItems, conceptId, openScheme, relate } from "../src/graph/write.js";
+import { loadOntology, openGraph } from "../src/graph/db";
+import { addConcepts, addItems, conceptId, openScheme, relate } from "../src/graph/write";
 
 const SCHEME = "kafka";
 
@@ -64,7 +64,40 @@ const PREREQUISITES: [string, string][] = [
   ["Topic", "Log compaction"],
 ];
 
+// Every concept needs at least one item. Mastery only moves on answered
+// questions, so an unassessed concept can never be mastered — and because
+// prerequisites gate what unlocks, it would block everything downstream.
 const ITEMS = [
+  {
+    concept: "Topic",
+    format: "cloze",
+    bloom_level: "remember",
+    stem: "A topic is an append-only {{blank}} that producers write to.",
+    answer: "log",
+    rationale: "Kafka's core abstraction is the log, not a queue: reads do not consume.",
+  },
+  {
+    concept: "Partition",
+    format: "multiple_choice",
+    bloom_level: "understand",
+    stem: "What does partitioning a topic primarily buy you?",
+    answer: "Parallelism, since partitions are consumed independently",
+    distractors: [
+      "Durability, since each partition is a separate backup",
+      "Ordering across the whole topic",
+      "Compression, since partitions are stored together",
+    ],
+    rationale:
+      "Partitions are the unit of parallelism. Ordering is guaranteed within a partition, not across a topic.",
+  },
+  {
+    concept: "Replication factor",
+    format: "cloze",
+    bloom_level: "remember",
+    stem: "With a replication factor of 3, a partition can lose {{blank}} brokers without losing data.",
+    answer: "2",
+    rationale: "Three copies means two can fail while one still holds the data.",
+  },
   {
     concept: "Offset",
     format: "cloze",

@@ -56,7 +56,16 @@ due items drive the study queue.
 ## 4. Prerequisite structure and the learning path
 
 **Implementation:** `PREREQUISITE_OF` edges; the next concept offered is one
-whose prerequisites are already mastered — the graph's "fringe."
+whose prerequisites are known well enough — the graph's "fringe."
+
+**Two thresholds, not one.** Unlocking a dependent concept (0.70) is separate
+from declaring a concept mastered (0.95, §9). They answer different questions:
+whether the learner knows enough for the next concept to make sense, versus
+whether this one is learned. Gating unlocks at the mastery criterion was tried
+first and behaved badly — a graph that narrows to a single root concept offers
+one question, and spacing then stalls the learner until its next review comes
+due. Spaced practice on the prerequisite continues either way, so the lower
+unlock bar costs little.
 
 - Doignon, J.-P., & Falmagne, J.-C. (1985). Spaces for the assessment of
   knowledge. *International Journal of Man-Machine Studies*, 23(2), 175–196. —

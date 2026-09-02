@@ -3,7 +3,7 @@
  * `toDDL` (what the engine checks) and `validateNode` / `validateRelation`
  * (what the engine has no syntax for).
  */
-import { propertyDDL, type Ontology, type Property } from "./schema.js";
+import { propertyDDL, type Ontology, type Property } from "./schema";
 
 // ---------------------------------------------------------------------------
 // DDL

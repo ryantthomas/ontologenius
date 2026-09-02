@@ -7,8 +7,8 @@
  * and why, because the caller is usually a language model that can correct
  * itself if told what was wrong.
  */
-import { validateNode, validateRelation, wouldCreateCycle, type Violation } from "../ontology/compile.js";
-import type { Graph } from "./db.js";
+import { validateNode, validateRelation, wouldCreateCycle, type Violation } from "../ontology/compile";
+import type { Graph } from "./db";
 
 export interface Rejection {
   input: unknown;

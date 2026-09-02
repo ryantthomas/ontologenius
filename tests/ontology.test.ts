@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { toDDL, validateNode, validateRelation, wouldCreateCycle } from "../src/ontology/compile.js";
-import { parseOntology } from "../src/ontology/schema.js";
-import { loadOntology, openGraph } from "../src/graph/db.js";
+import { toDDL, validateNode, validateRelation, wouldCreateCycle } from "../src/ontology/compile";
+import { parseOntology } from "../src/ontology/schema";
+import { loadOntology, openGraph } from "../src/graph/db";
 
 const base = loadOntology("ontology/base.yaml");
 

@@ -8,9 +8,9 @@
  * Doignon & Falmagne 1985), and items are interleaved across concepts rather
  * than blocked by concept (Rohrer & Taylor 2007).
  */
-import { initialKnowledge, isMastered, updateKnowledge } from "../learning/bkt.js";
-import { newSchedule, ratingFor, review, type ScheduleState } from "../learning/fsrs.js";
-import type { Graph, Row } from "./db.js";
+import { initialKnowledge, isMastered, unlocksDependents, updateKnowledge } from "../learning/bkt";
+import { newSchedule, ratingFor, review, type ScheduleState } from "../learning/fsrs";
+import type { Graph, Row } from "./db";
 
 /** How many concepts a learner may meet for the first time in one session. */
 export const NEW_CONCEPTS_PER_SESSION = 4;
@@ -73,7 +73,7 @@ export async function availableConcepts(graph: Graph, learnerId: string, schemeI
 
   return concepts.filter((c) => {
     const required = blockers.get(String(c.id)) ?? [];
-    return required.every((id) => isMastered(known.get(id) ?? 0));
+    return required.every((id) => unlocksDependents(known.get(id) ?? 0));
   });
 }
 
@@ -269,12 +269,33 @@ export async function recordAnswer(
   };
 }
 
+/**
+ * When the next review falls due, or null if nothing is scheduled. Used to
+ * tell a learner who has cleared the queue when to come back, rather than
+ * leaving them staring at an empty session.
+ */
+export async function nextDue(graph: Graph, learnerId: string, schemeId: string): Promise<Date | null> {
+  const rows = await graph.query(
+    `MATCH (l:Learner {id: $learner})-[s:SCHEDULED]->(i:Item)-[:ASSESSES]->(c:Concept)-[:IN_SCHEME]->(sc:Scheme {id: $scheme})
+     RETURN min(s.due) AS due`,
+    { learner: learnerId, scheme: schemeId },
+  );
+  return asDate(rows[0]?.due);
+}
+
 export interface Progress {
   concepts: number;
   mastered: number;
   attempted: number;
   dueNow: number;
   weakest: { conceptId: string; label: string; pKnown: number }[];
+  /**
+   * Concepts carrying no items. These are dead ends: mastery only moves on
+   * answered questions, so an unassessed concept can never be mastered and
+   * permanently blocks everything downstream of it. Reported so the agent
+   * building the graph knows where to add questions.
+   */
+  unassessed: { conceptId: string; label: string }[];
 }
 
 /**
@@ -302,11 +323,20 @@ export async function progress(graph: Graph, learnerId: string, schemeId: string
 
   const queue = await studyQueue(graph, learnerId, schemeId);
 
+  const itemCounts = await graph.query(
+    `MATCH (c:Concept)-[:IN_SCHEME]->(s:Scheme {id: $scheme})
+     OPTIONAL MATCH (i:Item)-[:ASSESSES]->(c)
+     RETURN c.id AS id, c.pref_label AS label, count(i) AS items`,
+    { scheme: schemeId },
+  );
+  const unassessed = itemCounts.filter((row) => Number(row.items) === 0);
+
   return {
     concepts: Number(totals?.concepts ?? 0),
     mastered: scored.filter((c) => isMastered(c.pKnown)).length,
     attempted: scored.length,
     dueNow: queue.filter((i) => !i.isNew).length,
     weakest: [...scored].sort((a, b) => a.pKnown - b.pKnown).slice(0, 5),
+    unassessed: unassessed.map((row) => ({ conceptId: String(row.id), label: String(row.label) })),
   };
 }

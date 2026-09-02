@@ -43,6 +43,22 @@ export const DEFAULT_BKT: BktParameters = {
 export const MASTERY_THRESHOLD = 0.95;
 
 /**
+ * The threshold at which a concept's dependents become available to study.
+ *
+ * Deliberately lower than mastery. These are two different questions:
+ * "has this been learned?" (Bloom's mastery criterion, 0.95) and "does the
+ * learner know enough for the next concept to make sense?" — which is what
+ * prerequisite structure is actually about (Doignon & Falmagne 1985).
+ *
+ * Gating unlocks at 0.95 was tried first and behaves badly: a topic whose
+ * graph narrows to a single root concept offers one question, and spacing then
+ * makes the learner wait for the next review before anything else opens up.
+ * Since spaced practice on the prerequisite continues regardless, a lower
+ * unlock bar costs little and keeps the session moving.
+ */
+export const UNLOCK_THRESHOLD = 0.7;
+
+/**
  * Prior for a concept not yet attempted. A concept the graph marks as harder
  * starts lower, so it takes more evidence to call it learned.
  */
@@ -75,4 +91,9 @@ export function updateKnowledge(prior: number, correct: boolean, params = DEFAUL
 
 export function isMastered(pKnown: number): boolean {
   return pKnown >= MASTERY_THRESHOLD;
+}
+
+/** Whether this concept is known well enough to unlock what depends on it. */
+export function unlocksDependents(pKnown: number): boolean {
+  return pKnown >= UNLOCK_THRESHOLD;
 }

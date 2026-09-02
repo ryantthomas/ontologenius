@@ -5,8 +5,8 @@ import {
   initialKnowledge,
   isMastered,
   updateKnowledge,
-} from "../src/learning/bkt.js";
-import { Rating, dueFirst, newSchedule, ratingFor, review } from "../src/learning/fsrs.js";
+} from "../src/learning/bkt";
+import { Rating, dueFirst, newSchedule, ratingFor, review } from "../src/learning/fsrs";
 
 describe("knowledge tracing", () => {
   it("raises the posterior on a correct answer and lowers it on a wrong one", () => {

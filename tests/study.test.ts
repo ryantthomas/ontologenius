@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { loadOntology, openGraph, type Graph } from "../src/graph/db.js";
-import { addConcepts, addItems, conceptId, openScheme, relate } from "../src/graph/write.js";
-import { NEW_CONCEPTS_PER_SESSION, progress, recordAnswer, studyQueue } from "../src/graph/study.js";
-import { MASTERY_THRESHOLD } from "../src/learning/bkt.js";
+import { loadOntology, openGraph, type Graph } from "../src/graph/db";
+import { addConcepts, addItems, conceptId, openScheme, relate } from "../src/graph/write";
+import { NEW_CONCEPTS_PER_SESSION, progress, recordAnswer, studyQueue } from "../src/graph/study";
+import { MASTERY_THRESHOLD, UNLOCK_THRESHOLD } from "../src/learning/bkt";
 
 const SCHEME = "t";
 const LEARNER = "learner-1";
@@ -65,16 +65,31 @@ describe("study session composition", () => {
     expect(backToBack).toEqual([]);
   });
 
-  it("unlocks the dependent concept once its prerequisite is mastered", async () => {
+  it("unlocks the dependent concept once its prerequisite passes the unlock bar", async () => {
     const aItems = (await studyQueue(graph, LEARNER, SCHEME)).filter((i) => i.conceptLabel === "A");
 
-    // Answer correctly until A crosses the mastery threshold.
     let outcome = await recordAnswer(graph, LEARNER, aItems[0].itemId, true);
-    for (let i = 0; i < 10 && !outcome.mastered; i++) {
+    for (let i = 0; i < 10 && outcome.pKnown < UNLOCK_THRESHOLD; i++) {
       outcome = await recordAnswer(graph, LEARNER, aItems[0].itemId, true);
     }
-    expect(outcome.mastered).toBe(true);
+    expect(outcome.pKnown).toBeGreaterThanOrEqual(UNLOCK_THRESHOLD);
 
+    const after = await studyQueue(graph, LEARNER, SCHEME);
+    expect(after.map((i) => i.conceptLabel)).toContain("B");
+  });
+
+  it("unlocks dependents before the prerequisite is fully mastered", async () => {
+    // The two thresholds are distinct on purpose: knowing enough to proceed is
+    // a weaker claim than having mastered the material.
+    expect(UNLOCK_THRESHOLD).toBeLessThan(MASTERY_THRESHOLD);
+
+    const aItems = (await studyQueue(graph, LEARNER, SCHEME)).filter((i) => i.conceptLabel === "A");
+    let outcome = await recordAnswer(graph, LEARNER, aItems[0].itemId, true);
+    while (outcome.pKnown < UNLOCK_THRESHOLD) {
+      outcome = await recordAnswer(graph, LEARNER, aItems[0].itemId, true);
+    }
+
+    expect(outcome.mastered).toBe(false);
     const after = await studyQueue(graph, LEARNER, SCHEME);
     expect(after.map((i) => i.conceptLabel)).toContain("B");
   });
@@ -139,6 +154,18 @@ describe("recording an answer", () => {
 
   it("rejects an unknown item", async () => {
     await expect(recordAnswer(graph, LEARNER, "nope", true)).rejects.toThrow(/no item/);
+  });
+});
+
+describe("unassessed concepts", () => {
+  it("reports concepts carrying no items, since they can never be mastered", async () => {
+    const graph = await openGraph(":memory:", loadOntology("ontology/base.yaml"));
+    await openScheme(graph, { id: SCHEME, title: "Test", description: "" });
+    await addConcepts(graph, SCHEME, [concept("A"), concept("B")]);
+    await addItems(graph, [item("A", 1)]);
+
+    const summary = await progress(graph, LEARNER, SCHEME);
+    expect(summary.unassessed.map((c) => c.label)).toEqual(["B"]);
   });
 });
 

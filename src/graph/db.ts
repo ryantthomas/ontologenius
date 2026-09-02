@@ -2,10 +2,11 @@
  * Graph handle: an embedded LadybugDB instance with the ontology's schema
  * applied. The DDL is idempotent, so this runs on every boot.
  */
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import lbug from "@ladybugdb/core";
-import { toDDL } from "../ontology/compile.js";
-import { parseOntology, type Ontology } from "../ontology/schema.js";
+import { toDDL } from "../ontology/compile";
+import { parseOntology, type Ontology } from "../ontology/schema";
 
 export type Row = Record<string, unknown>;
 
@@ -26,6 +27,11 @@ export function loadOntology(path: string): Ontology {
  * Pass ":memory:" for an ephemeral graph — that is what the tests use.
  */
 export async function openGraph(databasePath: string, ontology: Ontology): Promise<Graph> {
+  // The engine will not create intermediate directories for a new database.
+  if (databasePath !== ":memory:") {
+    mkdirSync(dirname(resolve(databasePath)), { recursive: true });
+  }
+
   const database = new lbug.Database(databasePath);
   const connection = new lbug.Connection(database);
 
