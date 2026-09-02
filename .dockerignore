@@ -1,0 +1,11 @@
+node_modules
+.next
+data
+.git
+.github
+.claude
+coverage
+*.md
+!README.md
+.env
+.env.*

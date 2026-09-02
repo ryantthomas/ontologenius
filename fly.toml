@@ -1,0 +1,35 @@
+app = "ontologenius"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  GRAPH_PATH = "/data/graph"
+  PORT = "3000"
+
+# Real block storage. The graph is a memory-mapped file that needs a POSIX
+# filesystem with working locks — see docs/deploy.md for why the usual
+# serverless volume options do not qualify.
+[[mounts]]
+  source = "graph"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+
+  # One writer. The database is embedded and single-writer, so a second machine
+  # would be a second process against a volume only one can hold.
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[http_service.concurrency]
+  type = "requests"
+  soft_limit = 40
+  hard_limit = 80
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

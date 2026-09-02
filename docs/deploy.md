@@ -1,0 +1,83 @@
+# Deploying
+
+## One process, not two
+
+The site and the remote connector run in the same container, from `server.ts`.
+This is forced rather than chosen: the graph is an embedded, single-writer,
+memory-mapped database. Two services behind one shared volume would block or
+corrupt each other, so one process holds one handle and Express routes between
+the two surfaces.
+
+## The storage constraint
+
+The database is a **file that must live on a POSIX filesystem with working file
+locking**. That rules out more platforms than it first appears to, and it is the
+single decision that dictates where this can run.
+
+| Option | Verdict |
+|---|---|
+| Block storage (Fly volume, GCE persistent disk, EBS, a plain server) | **Works.** A real filesystem with real locking. |
+| Vercel / Lambda / any serverless function | No. No persistent filesystem at all. |
+| Cloud Run + Cloud Storage FUSE volume | **No.** GCS FUSE provides no file locking, resolves concurrent writes last-write-wins, and is not POSIX-compliant for memory-mapped files — which is exactly what this engine does. |
+| Cloud Run + Filestore (NFS) volume | **No.** Cloud Run mounts NFS volumes in no-lock mode; NFS locking is not supported. |
+
+Cloud Run is the obvious choice for a stateless container and the wrong one
+here. Its two volume options both drop file locking, and an ACID database
+without locking is not ACID. The failure mode is silent corruption under
+concurrent access rather than a clean error, which is the worst kind.
+
+**Recommended: Fly.io.** A Fly volume is real block storage attached to the
+machine, which is what this needs, and `fly.toml` in the repo is the whole
+configuration. Pin the app to a single machine — a second instance would be a
+second writer against a volume that only one can hold.
+
+**Staying on GCP:** use a small Compute Engine VM with a persistent disk rather
+than Cloud Run. An `e2-small` with a 10 GB balanced disk is a few dollars a
+month and gives a normal filesystem. Cloud Run becomes viable only if the
+embedded database is later swapped for a networked one, which would give up the
+"SQLite for graphs" property the design rests on.
+
+## Environment
+
+| Variable | Purpose |
+|---|---|
+| `GRAPH_PATH` | Where the graph file lives. Point it at the mounted volume. |
+| `PUBLIC_URL` | The externally reachable origin. OAuth metadata is derived from it, so it must match what clients see or the handshake fails. |
+| `OAUTH_SECRET` | Signing key for access tokens, ≥32 chars. **The remote connector refuses to serve without it** — an unauthenticated write path on the public internet is not a default worth having. |
+| `LEARNER_ID` | The single subject every token resolves to. Defaults to `me`. |
+
+## Deploying to Fly
+
+```sh
+fly launch --no-deploy              # uses the committed fly.toml
+fly volumes create graph --size 1   # real block storage
+fly secrets set OAUTH_SECRET="$(openssl rand -hex 32)"
+fly secrets set PUBLIC_URL="https://<your-app>.fly.dev"
+fly deploy
+```
+
+Then add `https://<your-app>.fly.dev/mcp` as a custom connector in claude.ai.
+Discovery, dynamic client registration, and the PKCE handshake are all served
+from that origin.
+
+## Verifying a deployment
+
+```sh
+BASE=https://<your-app>.fly.dev npm run probe
+```
+
+`scripts/probe-connector.ts` walks the same handshake claude.ai performs —
+register, authorize with PKCE, exchange the code, call `tools/list` — and checks
+that a replayed authorization code and a forged token are both rejected. It is
+the fastest way to tell whether a deployment is actually connectable.
+
+## Known limits
+
+- **Restarting the server invalidates refresh tokens.** Clients and tokens are
+  held in memory, so a redeploy forces reconnecting the connector. Persisting
+  them is the first change to make if this stops being a single-user
+  deployment.
+- **Single writer, single user.** One subject, one graph. Multi-user needs
+  per-user graph files and a real authentication step at `/authorize`, which
+  currently redirects straight back because the only person who can reach it is
+  the person who deployed it.

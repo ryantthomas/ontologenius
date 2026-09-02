@@ -113,6 +113,28 @@ Add this to `claude_desktop_config.json` (Settings → Developer → Edit Config
 Then just talk to Claude — *"I need to learn Kafka's replication protocol"* — and
 run `npm run dev` to study what it built. Both processes read the same graph file.
 
+### Or remotely, from claude.ai
+
+Deploy it and add the URL as a custom connector, which also reaches Claude on
+mobile. `server.ts` serves the site and the connector from one process — forced,
+not chosen: the graph is an embedded single-writer database, so it cannot be
+split across services. It carries a full OAuth 2.1 authorization server
+(discovery, dynamic client registration, PKCE), because claude.ai will not attach
+to a remote connector without one.
+
+```sh
+OAUTH_SECRET="$(openssl rand -hex 32)" PUBLIC_URL=https://your-host npm start
+npm run probe   # walks the same handshake claude.ai performs
+```
+
+The connector refuses to serve unless `OAUTH_SECRET` is set — an unauthenticated
+write path on the public internet is not a sensible default.
+
+**Where it can run is constrained by the database**, which is a memory-mapped
+file needing a POSIX filesystem with working locks. That rules out serverless
+platforms *and* Cloud Run's volume options, both of which drop file locking. See
+[`docs/deploy.md`](docs/deploy.md) — it is the decision that dictates hosting.
+
 The five tools Claude gets are generated from the ontology, so the enum values it
 is offered are exactly the ones the validator enforces:
 
