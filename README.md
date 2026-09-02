@@ -78,6 +78,42 @@ file is what keeps them from drifting apart.
 Violations come back as a list of `{path, message}` rather than a thrown error,
 so an agent writing to the graph can read what it got wrong and correct itself.
 
+## Connecting Claude
+
+Point Claude Desktop at the local server — no hosting, no API key, no OAuth.
+Add this to `claude_desktop_config.json` (Settings → Developer → Edit Config):
+
+```json
+{
+  "mcpServers": {
+    "ontologenius": {
+      "command": "npx",
+      "args": ["tsx", "/absolute/path/to/ontologenius/src/mcp/server.ts"],
+      "env": { "GRAPH_PATH": "/absolute/path/to/ontologenius/data/demo" }
+    }
+  }
+}
+```
+
+Then just talk to Claude — *"I need to learn Kafka's replication protocol"* — and
+run `npm run dev` to study what it built. Both processes read the same graph file.
+
+The five tools Claude gets are generated from the ontology, so the enum values it
+is offered are exactly the ones the validator enforces:
+
+| Tool | Purpose |
+|---|---|
+| `open_scheme` | Start a topic; returns the id the other tools take |
+| `add_concepts` | Add concepts, each with a required source |
+| `relate` | Assert `PREREQUISITE_OF`, `BROADER`, `CONTRASTS_WITH`, … between concepts |
+| `add_items` | Add cloze and multiple-choice questions |
+| `progress` | Read mastery, weak spots, and which concepts still lack questions |
+
+Nothing throws. Each write reports what it accepted and what it rejected with
+reasons, so Claude can correct itself and resend — a prerequisite cycle, a
+multiple-choice item with too few distractors, or a concept missing a source all
+come back as an explanation rather than a stack trace.
+
 ## Layout
 
 ```

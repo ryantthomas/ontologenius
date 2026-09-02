@@ -10,6 +10,9 @@ import { parseOntology, type Ontology } from "../ontology/schema";
 
 export type Row = Record<string, unknown>;
 
+/** Buffer pool for ":memory:" graphs — enough for tests, small enough to run many. */
+const IN_MEMORY_BUFFER_POOL_BYTES = 64 * 1024 * 1024;
+
 export interface Graph {
   ontology: Ontology;
   /** Run a Cypher statement, optionally with `$name` parameters. */
@@ -32,7 +35,13 @@ export async function openGraph(databasePath: string, ontology: Ontology): Promi
     mkdirSync(dirname(resolve(databasePath)), { recursive: true });
   }
 
-  const database = new lbug.Database(databasePath);
+  // An ephemeral graph gets a modest buffer pool. The engine's default reserves
+  // a share of system memory, which is right for a real database but exhausts
+  // the address space when a test suite opens several at once.
+  const database =
+    databasePath === ":memory:"
+      ? new lbug.Database(databasePath, IN_MEMORY_BUFFER_POOL_BYTES)
+      : new lbug.Database(databasePath);
   const connection = new lbug.Connection(database);
 
   const query = async (statement: string, params?: Record<string, unknown>): Promise<Row[]> => {
