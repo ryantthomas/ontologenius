@@ -141,13 +141,32 @@ relations:
       response: string
 
 # ---------------------------------------------------------------------------
-# Constraints checked by the ontology compiler before any write is accepted.
+# Constraints the engine has no syntax for, checked by the write layer.
+#
+# LadybugDB 0.20 enforces structure and types on its own — unknown labels,
+# unknown properties, wrong relation endpoints, type mismatches and duplicate
+# primary keys are all rejected by the engine. It has no ENUM, no NOT NULL and
+# no CHECK, so enum membership, required properties, and the graph-shape rules
+# below are compiled into a validator from this same file.
 # ---------------------------------------------------------------------------
 constraints:
-  - every Concept has exactly one IN_SCHEME
-  - every Concept has at least one CITES              # no unsourced assertions
-  - pref_label is unique within a Scheme              # nomenclature discipline
-  - PREREQUISITE_OF is acyclic                        # learning paths must exist
-  - BROADER is acyclic
-  - every Item has exactly one ASSESSES
-  - multiple_choice Items have at least 2 distractors
+  # Every concept belongs to exactly one topic.
+  - { rule: exactly_one, node: Concept, relation: IN_SCHEME }
+
+  # No unsourced assertions — provenance is not optional.
+  - { rule: at_least_one, node: Concept, relation: CITES }
+
+  # Nomenclature discipline: one preferred label per concept, per topic.
+  - { rule: unique_within, node: Concept, property: pref_label, scope: IN_SCHEME }
+
+  # Learning paths must exist — Doignon & Falmagne (1985).
+  - { rule: acyclic, relation: PREREQUISITE_OF }
+  - { rule: acyclic, relation: BROADER }
+
+  # Every question tests exactly one concept, so mastery is attributable.
+  - { rule: exactly_one, node: Item, relation: ASSESSES }
+
+  # Competitive distractors are what make MCQ retrieval-effective —
+  # Little et al. (2012).
+  - { rule: min_array_length, node: Item, property: distractors, length: 2,
+      when: { format: multiple_choice } }

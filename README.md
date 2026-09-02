@@ -51,11 +51,32 @@ next session at your weak spots.
 
 | Choice | Rationale |
 |---|---|
-| **[LadybugDB](https://ladybugdb.com/)** (`@ladybugdb/core`, MIT) | Embedded property-graph database — "SQLite for graphs." Successor to KuzuDB, which Apple acquired and archived in Oct 2025. Cypher, columnar storage, ACID, plus vector and full-text indices in-process. Its **required predefined schema** is what enforces the ontology: illegal node types, relation types, and property values are rejected by the database itself, not by hand-written validation. |
+| **[LadybugDB](https://ladybugdb.com/)** (`@ladybugdb/core`, MIT) | Embedded property-graph database — "SQLite for graphs." Successor to KuzuDB, which Apple acquired and archived in Oct 2025. Cypher, columnar storage, ACID, plus vector and full-text indices in-process. Its **required predefined schema** does half the enforcement for free (see below). |
 | **[ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs)** (MIT) | The FSRS scheduler, already written and empirically tuned. We schedule reviews; we do not invent a scheduling algorithm. |
 | **[SKOS](https://www.w3.org/TR/skos-reference/)** (W3C Recommendation) | Standard semantics for taxonomy and nomenclature: `prefLabel`, `altLabel`, `notation`, `broader`, `related`, `inScheme`. The vocabulary layer is standards-backed rather than bespoke. |
 | **Bloom's revised taxonomy** (Anderson & Krathwohl, 2001) | Supplies the enumerations every concept and item is typed by — the knowledge dimension and the cognitive process level. Enforced as database enums. |
 | **Zod + YAML** | The ontology is declared once in YAML, validated by Zod, compiled to graph DDL. Adding a domain is configuration, not code. |
+
+## How the ontology is enforced
+
+`ontology/base.yaml` is declared once and compiles to **two** enforcement
+mechanisms, because neither covers the whole job:
+
+| Enforced by the engine | Enforced by the generated validator |
+|---|---|
+| Unknown node or relation types | Enum membership |
+| Undeclared properties | Required properties |
+| Wrong relation endpoints | Vector dimensions |
+| Property type mismatches | Acyclic prerequisite edges |
+| Duplicate primary keys | Graph-shape rules (`exactly_one`, `at_least_one`, `min_array_length`) |
+
+The split is not a preference. LadybugDB 0.20 has no `ENUM` type, no `NOT NULL`
+and no `CHECK`, and it stores a missing property as NULL rather than rejecting
+it — so those checks have to live above the engine. Generating both from the same
+file is what keeps them from drifting apart.
+
+Violations come back as a list of `{path, message}` rather than a thrown error,
+so an agent writing to the graph can read what it got wrong and correct itself.
 
 ## Layout
 
