@@ -152,8 +152,11 @@ export function buildTools(ontology: Ontology): ToolDefinition[] {
       description:
         `Assert typed relations between concepts. Available: ${relations.join(", ")}. ` +
         "PREREQUISITE_OF drives the learning path and must stay acyclic — an edge that would close a " +
-        "cycle is rejected. BROADER is taxonomic (narrower -> broader). CONTRASTS_WITH marks confusable " +
-        "pairs and is used to source multiple-choice distractors. Use concept ids returned by add_concepts.",
+        "cycle is rejected. BROADER is taxonomic (narrower -> broader): a kind of. PART_OF is " +
+        "meronymic (part -> whole): a component of. They are not interchangeable — a whole is " +
+        "withheld until its parts are known, whereas a broader concept is not. CONTRASTS_WITH marks " +
+        "confusable pairs and is used to source multiple-choice distractors. Use concept ids " +
+        "returned by add_concepts.",
       inputSchema: {
         edges: z
           .array(
@@ -201,8 +204,11 @@ export function buildTools(ontology: Ontology): ToolDefinition[] {
       title: "Read study progress",
       description:
         "What the learner has actually learned: how many concepts are mastered, which are weakest, " +
-        "how many reviews are due, and which concepts still have no questions. Read this before " +
-        "extending a topic so you add material where it is needed rather than where you left off.",
+        "how many reviews are due, which concepts still have no questions, and which ones the " +
+        "learner keeps failing. Read this before extending a topic so you add material where it is " +
+        "needed rather than where you left off. A concept in needs_decomposition should not be given " +
+        "more questions at the same level — break it into its constituent parts with add_concepts, " +
+        "link them with PART_OF, and give the parts their own questions.",
       inputSchema: {
         scheme: z.string(),
         learner: z.string().optional().describe("Defaults to the connected user."),
@@ -210,13 +216,22 @@ export function buildTools(ontology: Ontology): ToolDefinition[] {
       handler: async (graph, args) => {
         const learner = args.learner ? String(args.learner) : (process.env.LEARNER_ID ?? "me");
         const summary = await progress(graph, learner, String(args.scheme));
-        return {
-          ...summary,
-          note:
-            summary.unassessed.length > 0
-              ? `${summary.unassessed.length} concept(s) have no questions and cannot be mastered — add items for them.`
-              : undefined,
-        };
+        const notes: string[] = [];
+
+        if (summary.unassessed.length > 0) {
+          notes.push(
+            `${summary.unassessed.length} concept(s) have no questions and cannot be mastered — add items for them.`,
+          );
+        }
+        if (summary.needsDecomposition.length > 0) {
+          notes.push(
+            `${summary.needsDecomposition.length} concept(s) are being failed repeatedly. Break each into ` +
+              `its parts with add_concepts, link them with PART_OF, and give the parts questions — do not ` +
+              `write more questions at the same level.`,
+          );
+        }
+
+        return { ...summary, notes: notes.length ? notes : undefined };
       },
     },
   ];

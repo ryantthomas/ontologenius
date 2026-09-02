@@ -200,7 +200,7 @@ describe("rejections a model can act on", () => {
 
     const summary = await call(client, "progress", { scheme: "t" });
     expect(summary.data.unassessed).toMatchObject([{ label: "B" }]);
-    expect(summary.data.note).toMatch(/cannot be mastered/);
+    expect(summary.data.notes.join(" ")).toMatch(/cannot be mastered/);
   });
 
   it("rejects a multiple-choice item with too few distractors, and accepts the fix", async () => {

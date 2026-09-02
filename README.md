@@ -47,6 +47,21 @@ and you study by retrieval practice — cloze and multiple choice, scheduled by 
 with mastery estimated per concept. Claude can read that progress back and aim the
 next session at your weak spots.
 
+## The graph changes as you learn
+
+Grain size is a modelling decision, and it can be wrong: a concept you keep failing
+is often not one concept but several wearing a single label. So a concept that
+survives repeated practice without being learned is reported back as **ready to
+break down**. Claude splits it into parts, links them with `PART_OF`, and gives
+the parts their own questions. The whole is then withheld until its parts are
+known, and reassessed as the sum of them.
+
+This is the one mechanism that edits the *graph* in response to performance rather
+than only the schedule — the qualitative form of splitting a knowledge component
+when the response data says it is not atomic. `PART_OF` is deliberately distinct
+from `BROADER`: knowing every *kind of* something is not knowing it, whereas
+knowing every *part* is exactly what composition claims.
+
 ## Why these components
 
 | Choice | Rationale |

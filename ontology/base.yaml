@@ -98,6 +98,14 @@ relations:
   IN_SCHEME:       { from: Concept,     to: Scheme }
   BROADER:         { from: Concept,     to: Concept }   # skos:broader — taxonomy
   RELATED:         { from: Concept,     to: Concept }   # skos:related — associative
+
+  # Partonomy, deliberately distinct from BROADER's taxonomy. A subtype of a
+  # thing is not a part of it, and the two behave differently under mastery:
+  # knowing every subtype does not mean knowing the thing, whereas knowing every
+  # part is what composition claims. Grain size is a modelling decision that can
+  # be wrong (Koedinger et al. 2012), so this relation is added in response to a
+  # learner failing a concept, not written down once up front.
+  PART_OF:         { from: Concept,     to: Concept }   # part -> whole
   PREREQUISITE_OF: { from: Concept,     to: Concept }   # Doignon & Falmagne (1985)
   CONTRASTS_WITH:  { from: Concept,     to: Concept }   # confusable pairs -> distractors
   EXEMPLIFIES:     { from: Concept,     to: Concept }
@@ -167,6 +175,9 @@ constraints:
   # Learning paths must exist — Doignon & Falmagne (1985).
   - { rule: acyclic, relation: PREREQUISITE_OF }
   - { rule: acyclic, relation: BROADER }
+
+  # A thing cannot be part of itself, directly or transitively.
+  - { rule: acyclic, relation: PART_OF }
 
   # Every question tests exactly one concept, so mastery is attributable.
   - { rule: exactly_one, node: Item, relation: ASSESSES }

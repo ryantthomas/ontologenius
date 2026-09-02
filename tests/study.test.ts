@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { loadOntology, openGraph, type Graph } from "../src/graph/db";
 import { addConcepts, addItems, conceptId, openScheme, relate } from "../src/graph/write";
-import { NEW_CONCEPTS_PER_SESSION, progress, recordAnswer, studyQueue } from "../src/graph/study";
+import {
+  ATTEMPTS_BEFORE_DECOMPOSING,
+  NEW_CONCEPTS_PER_SESSION,
+  availableConcepts,
+  progress,
+  recordAnswer,
+  studyQueue,
+} from "../src/graph/study";
 import { MASTERY_THRESHOLD, UNLOCK_THRESHOLD } from "../src/learning/bkt";
 
 const SCHEME = "t";
@@ -166,6 +173,89 @@ describe("unassessed concepts", () => {
 
     const summary = await progress(graph, LEARNER, SCHEME);
     expect(summary.unassessed.map((c) => c.label)).toEqual(["B"]);
+  });
+});
+
+describe("decomposition", () => {
+  /** Answer one concept's item wrong repeatedly, to make the learner stuck on it. */
+  async function failRepeatedly(graph: Graph, label: string, times: number) {
+    const items = (await studyQueue(graph, LEARNER, SCHEME)).filter((i) => i.conceptLabel === label);
+    for (let i = 0; i < times; i++) {
+      await recordAnswer(graph, LEARNER, items[0].itemId, false);
+    }
+  }
+
+  it("flags a concept the learner keeps failing, but not one merely unattempted", async () => {
+    const graph = await buildGraph();
+    await failRepeatedly(graph, "A", ATTEMPTS_BEFORE_DECOMPOSING);
+
+    const summary = await progress(graph, LEARNER, SCHEME);
+    expect(summary.needsDecomposition.map((c) => c.label)).toEqual(["A"]);
+    expect(summary.needsDecomposition[0].attempts).toBeGreaterThanOrEqual(
+      ATTEMPTS_BEFORE_DECOMPOSING,
+    );
+  });
+
+  it("does not flag a concept that has already been broken down", async () => {
+    const graph = await buildGraph();
+    await failRepeatedly(graph, "A", ATTEMPTS_BEFORE_DECOMPOSING);
+
+    await addConcepts(graph, SCHEME, [concept("A part")]);
+    await relate(graph, [
+      { relation: "PART_OF", from: conceptId(SCHEME, "A part"), to: conceptId(SCHEME, "A") },
+    ]);
+
+    const summary = await progress(graph, LEARNER, SCHEME);
+    expect(summary.needsDecomposition).toEqual([]);
+  });
+
+  it("withholds a whole until its parts are known, then offers it again", async () => {
+    // A two-concept graph, so the session's new-material cap cannot confound
+    // what is being tested here: availability, not queue composition.
+    const graph = await openGraph(":memory:", loadOntology("ontology/base.yaml"));
+    await openScheme(graph, { id: SCHEME, title: "Test", description: "" });
+    await addConcepts(graph, SCHEME, [concept("Whole")]);
+    await addItems(graph, [item("Whole", 1)]);
+
+    const labels = async () =>
+      (await availableConcepts(graph, LEARNER, SCHEME)).map((c) => String(c.label));
+
+    // Unattached, the whole is available.
+    expect(await labels()).toContain("Whole");
+
+    await addConcepts(graph, SCHEME, [concept("Part")]);
+    await addItems(graph, [item("Part", 1)]);
+    await relate(graph, [
+      { relation: "PART_OF", from: conceptId(SCHEME, "Part"), to: conceptId(SCHEME, "Whole") },
+    ]);
+
+    // Broken down, it is withheld until the part is known.
+    expect(await labels()).toEqual(["Part"]);
+
+    const [partItem] = (await studyQueue(graph, LEARNER, SCHEME)).filter(
+      (i) => i.conceptLabel === "Part",
+    );
+    let outcome = await recordAnswer(graph, LEARNER, partItem.itemId, true);
+    while (outcome.pKnown < UNLOCK_THRESHOLD) {
+      outcome = await recordAnswer(graph, LEARNER, partItem.itemId, true);
+    }
+
+    // The whole is now the sum of what is known.
+    expect(await labels()).toContain("Whole");
+    await graph.close();
+  });
+
+  it("refuses a part-of cycle, since a thing cannot be part of itself", async () => {
+    const graph = await buildGraph();
+    await relate(graph, [
+      { relation: "PART_OF", from: conceptId(SCHEME, "A"), to: conceptId(SCHEME, "B") },
+    ]);
+
+    const cycle = await relate(graph, [
+      { relation: "PART_OF", from: conceptId(SCHEME, "B"), to: conceptId(SCHEME, "A") },
+    ]);
+    expect(cycle.accepted).toEqual([]);
+    expect(cycle.rejected[0].violations[0].message).toMatch(/cycle/);
   });
 });
 

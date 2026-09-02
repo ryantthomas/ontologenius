@@ -42,8 +42,13 @@ export async function ensureLearner(graph: Graph, learnerId: string): Promise<vo
 }
 
 /**
- * Concepts in the scheme whose prerequisites are all mastered — the fringe of
- * what this learner can productively study next.
+ * Concepts this learner can productively study next.
+ *
+ * Two gates, and they mean different things. Prerequisites gate on what must be
+ * understood *first* (knowledge space theory — Doignon & Falmagne 1985). Parts
+ * gate on what a composite concept is *made of*: a concept that has been broken
+ * down is the sum of its parts, so it is withheld until those parts are known,
+ * and assessing it earlier would be the cognitive-load problem restated.
  */
 export async function availableConcepts(graph: Graph, learnerId: string, schemeId: string): Promise<Row[]> {
   const concepts = await graph.query(
@@ -58,6 +63,12 @@ export async function availableConcepts(graph: Graph, learnerId: string, schemeI
     { scheme: schemeId },
   );
 
+  const parts = await graph.query(
+    `MATCH (p:Concept)-[:PART_OF]->(whole:Concept)-[:IN_SCHEME]->(s:Scheme {id: $scheme})
+     RETURN p.id AS part, whole.id AS whole`,
+    { scheme: schemeId },
+  );
+
   const mastery = await graph.query(
     `MATCH (l:Learner {id: $learner})-[m:MASTERY]->(c:Concept)-[:IN_SCHEME]->(s:Scheme {id: $scheme})
      RETURN c.id AS id, m.p_known AS p_known`,
@@ -65,17 +76,29 @@ export async function availableConcepts(graph: Graph, learnerId: string, schemeI
   );
 
   const known = new Map(mastery.map((row) => [String(row.id), Number(row.p_known)]));
+
   const blockers = new Map<string, string[]>();
-  for (const row of prerequisites) {
-    const after = String(row.after);
-    blockers.set(after, [...(blockers.get(after) ?? []), String(row.before)]);
-  }
+  const add = (map: Map<string, string[]>, key: string, value: string) =>
+    map.set(key, [...(map.get(key) ?? []), value]);
+
+  for (const row of prerequisites) add(blockers, String(row.after), String(row.before));
+  for (const row of parts) add(blockers, String(row.whole), String(row.part));
 
   return concepts.filter((c) => {
     const required = blockers.get(String(c.id)) ?? [];
     return required.every((id) => unlocksDependents(known.get(id) ?? 0));
   });
 }
+
+/**
+ * How many attempts on one concept, without reaching the unlock bar, before the
+ * concept itself is suspect rather than the learner.
+ *
+ * The reasoning is Learning Factors Analysis in qualitative form: if practice
+ * is not reducing the error rate, the component is probably not atomic — it is
+ * several things wearing one label, and should be split (Cen et al. 2006).
+ */
+export const ATTEMPTS_BEFORE_DECOMPOSING = 4;
 
 /**
  * Build a study session: everything already due, then items from unseen
@@ -296,6 +319,12 @@ export interface Progress {
    * building the graph knows where to add questions.
    */
   unassessed: { conceptId: string; label: string }[];
+  /**
+   * Concepts the learner keeps failing that have not yet been broken down.
+   * Re-drilling these at the same grain is the wrong response; they should be
+   * split into parts, learned separately, then reassessed as a whole.
+   */
+  needsDecomposition: { conceptId: string; label: string; attempts: number; pKnown: number }[];
 }
 
 /**
@@ -311,7 +340,7 @@ export async function progress(graph: Graph, learnerId: string, schemeId: string
 
   const mastery = await graph.query(
     `MATCH (l:Learner {id: $learner})-[m:MASTERY]->(c:Concept)-[:IN_SCHEME]->(s:Scheme {id: $scheme})
-     RETURN c.id AS id, c.pref_label AS label, m.p_known AS p_known`,
+     RETURN c.id AS id, c.pref_label AS label, m.p_known AS p_known, m.attempts AS attempts`,
     { learner: learnerId, scheme: schemeId },
   );
 
@@ -319,7 +348,28 @@ export async function progress(graph: Graph, learnerId: string, schemeId: string
     conceptId: String(row.id),
     label: String(row.label),
     pKnown: Number(row.p_known),
+    attempts: Number(row.attempts),
   }));
+
+  // A concept already broken down is not a candidate for breaking down again.
+  const alreadySplit = new Set(
+    (
+      await graph.query(
+        `MATCH (p:Concept)-[:PART_OF]->(whole:Concept)-[:IN_SCHEME]->(s:Scheme {id: $scheme})
+         RETURN DISTINCT whole.id AS id`,
+        { scheme: schemeId },
+      )
+    ).map((row) => String(row.id)),
+  );
+
+  const needsDecomposition = scored
+    .filter(
+      (c) =>
+        c.attempts >= ATTEMPTS_BEFORE_DECOMPOSING &&
+        !unlocksDependents(c.pKnown) &&
+        !alreadySplit.has(c.conceptId),
+    )
+    .map(({ conceptId, label, attempts, pKnown }) => ({ conceptId, label, attempts, pKnown }));
 
   const queue = await studyQueue(graph, learnerId, schemeId);
 
@@ -336,7 +386,11 @@ export async function progress(graph: Graph, learnerId: string, schemeId: string
     mastered: scored.filter((c) => isMastered(c.pKnown)).length,
     attempted: scored.length,
     dueNow: queue.filter((i) => !i.isNew).length,
-    weakest: [...scored].sort((a, b) => a.pKnown - b.pKnown).slice(0, 5),
+    weakest: [...scored]
+      .sort((a, b) => a.pKnown - b.pKnown)
+      .slice(0, 5)
+      .map(({ conceptId, label, pKnown }) => ({ conceptId, label, pKnown })),
     unassessed: unassessed.map((row) => ({ conceptId: String(row.id), label: String(row.label) })),
+    needsDecomposition,
   };
 }

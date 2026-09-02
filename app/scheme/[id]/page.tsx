@@ -93,6 +93,29 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
       <h2>Prerequisite graph</h2>
       <GraphView layout={layout} />
 
+      {summary.needsDecomposition.length > 0 && (
+        <>
+          <h2>Ready to break down</h2>
+          <div className="card">
+            <p className="muted" style={{ margin: "0 0 10px", fontSize: 13 }}>
+              You keep missing these. More questions at the same level is the wrong answer — ask
+              Claude to split each into its parts, so you can learn those first and come back to the
+              whole.
+            </p>
+            <ul className="plain">
+              {summary.needsDecomposition.map((concept) => (
+                <li key={concept.conceptId}>
+                  <span>{concept.label}</span>
+                  <span className="mono">
+                    {concept.attempts} attempts · {(concept.pKnown * 100).toFixed(0)}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </>
+      )}
+
       {summary.unassessed.length > 0 && (
         <>
           <h2>Concepts with no questions</h2>
