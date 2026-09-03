@@ -29,7 +29,16 @@ export function loadOntology(path: string): Ontology {
  * Open (or create) a graph at `databasePath` and bring its schema up to date.
  * Pass ":memory:" for an ephemeral graph — that is what the tests use.
  */
-export async function openGraph(databasePath: string, ontology: Ontology): Promise<Graph> {
+export async function openGraph(
+  databasePath: string,
+  ontology: Ontology,
+  /**
+   * Applying the schema is the normal case. Restoring a backup is the
+   * exception: `IMPORT DATABASE` creates the tables itself and fails against a
+   * catalog that already has them.
+   */
+  { applySchema = true }: { applySchema?: boolean } = {},
+): Promise<Graph> {
   // The engine will not create intermediate directories for a new database.
   if (databasePath !== ":memory:") {
     mkdirSync(dirname(resolve(databasePath)), { recursive: true });
@@ -54,8 +63,10 @@ export async function openGraph(databasePath: string, ontology: Ontology): Promi
     return (await single.getAll()) as Row[];
   };
 
-  for (const statement of toDDL(ontology)) {
-    await query(statement);
+  if (applySchema) {
+    for (const statement of toDDL(ontology)) {
+      await query(statement);
+    }
   }
 
   return {
