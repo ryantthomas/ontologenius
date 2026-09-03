@@ -9,6 +9,14 @@ RUN npm ci
 
 FROM node:22-slim AS build
 WORKDIR /app
+# The graph engine's native binary links against libssl, which the slim image
+# does not ship. Next loads that module while collecting page data, so the
+# build fails without it — not just the runtime. Installing `openssl` rather
+# than a versioned `libssl3` keeps this working across Debian releases, where
+# the library package gets renamed.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
@@ -16,6 +24,12 @@ RUN npm run build
 FROM node:22-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+
+# Same shared libraries the engine needs at run time; ca-certificates so the
+# bring-your-own-key path can reach the API over TLS.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/.next ./.next
