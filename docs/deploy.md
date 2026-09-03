@@ -90,15 +90,68 @@ versioned — storage version 47 as of 0.20.2. Upgrades are applied in place and
 are **one-way**: once a database has been opened by a newer binary, an older one
 cannot read it. That makes every engine upgrade a migration.
 
+**Backing up a running deployment goes through the server, not the shell.** The
+engine is single-writer and holds a file lock, so a second process cannot open a
+graph the server already has open — `npm run backup` against a live deployment
+fails, and says so. Only the process holding the handle can export it:
+
 ```sh
-npm run backup                 # before upgrading. always.
+# live deployment — no downtime
+curl -X POST -H "Authorization: Bearer <token>" https://<host>/admin/backup
+
+# offline, with the server stopped
+npm run backup
 npm run restore -- <backup> <destination>
 ```
+
+Backups default to `backups/` beside the graph, which puts them on the mounted
+volume rather than in a container layer that disappears on restart.
 
 `EXPORT DATABASE` writes one Parquet file per table plus the Cypher DDL that
 rebuilds the schema. That is also the exit: Parquet is readable by DuckDB,
 pandas, Spark and everything else, so the graph's contents survive the engine
 regardless of what happens to the project.
+
+### What leaving would cost, measured
+
+The reason to accept a young engine is that leaving it is cheap and already
+rehearsed. Measured against 3,325 lines of application code:
+
+| Coupled to the engine | Size |
+|---|---|
+| `db.ts` — the connection | 4 lines |
+| `compile.ts` — `toDDL` only | ~30 of 202 lines |
+| `write.ts` | 9 queries in 317 lines |
+| `study.ts` | 23 queries in 396 lines |
+| `backup.ts` | 82 lines, all of it |
+
+Roughly **36 queries and 110 lines of plumbing**. The UI, MCP server, OAuth,
+agent loop, tool contract, learning engine, ontology parser and graph layout —
+about 2,500 lines — are untouched by a swap.
+
+The better number is the test suite. Of 63 tests, **only 13 touch raw queries**;
+the other 50 exercise the public API and would validate a replacement backend
+unchanged. That is an acceptance suite for any future engine, already written.
+
+- Cypher-compatible target (Memgraph, ArcadeDB via Cypher, a sibling Kuzu fork):
+  rewrite the connection, `toDDL` and backup; most queries port verbatim. **Half
+  a day.**
+- Different query language (SurrealQL, SPARQL, SQL): the 36 queries rewrite too.
+  **A day or two.**
+
+Note what the `Graph` interface does and does not buy: it abstracts the *engine*,
+not the *query language*. The queries live in `write.ts` and `study.ts`, so a
+language change reaches further than the interface suggests.
+
+**Why not switch now.** The alternatives were surveyed and tested. Every
+production-ready graph database with a real embedded mode is JVM-based (Neo4j,
+ArcadeDB, OrientDB), so from Node they are servers, not embedded — and Neo4j's
+AGPL is a poor fit for a hosted tier. Oxigraph's npm build is in-memory only.
+CozoDB's Node package has been unmaintained since 2023. DuckPGQ is not
+production-ready by its own account. SurrealDB embedded works and enforces enums
+in-engine, but its embedded engine is no more mature than this one — a lateral
+move. The remaining choice is between an embedded engine in this maturity tier
+and a JVM server process, and that trade has not yet been worth making.
 
 **What is not a mitigation.** Pinning the version forever. Security fixes and
 the vector-index work both live upstream, so staying put has its own cost. Back

@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    name: Typecheck, tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      # The site build catches the class of error tests do not: a server
+      # component reaching for something that only exists at runtime.
+      - run: npm run build
+
+  container:
+    name: Container builds and serves
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -t ontologenius:ci .
+
+      # Building proves it compiles. Running it proves the runtime file set is
+      # actually complete — the failure mode a Dockerfile usually has.
+      - name: Start the container
+        run: |
+          docker run -d --name ontologenius \
+            -p 3000:3000 \
+            -e OAUTH_SECRET=ci-secret-key-at-least-32-characters-long \
+            -e PUBLIC_URL=http://localhost:3000 \
+            ontologenius:ci
+
+      - name: Wait for it to serve
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3000/ > /dev/null; then
+              echo "serving after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "never came up:"
+          docker logs ontologenius
+          exit 1
+
+      # The full OAuth handshake claude.ai performs — dynamic client
+      # registration, PKCE authorize, code exchange, tools/list — plus the
+      # negative cases. Run inside the container so this tests the shipped
+      # image rather than the checkout.
+      - name: Probe the connector
+        run: docker exec ontologenius npm run probe
+
+      # Through the endpoint, not the script: the engine is single-writer, so a
+      # second process cannot open a graph the server holds. Backing up a live
+      # deployment is only possible from inside the running server.
+      - name: Back up the live server
+        run: docker exec ontologenius npm run probe -- --backup
+
+      - name: Container logs
+        if: always()
+        run: docker logs ontologenius

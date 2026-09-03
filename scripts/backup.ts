@@ -12,10 +12,25 @@ import lbug from "@ladybugdb/core";
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const destination = process.argv[2] ?? `./backups/${stamp}`;
 
-const graph = await openGraph(
-  process.env.GRAPH_PATH ?? "./data/demo",
-  loadOntology(process.env.ONTOLOGY_PATH ?? "ontology/base.yaml"),
-);
+let graph;
+try {
+  graph = await openGraph(
+    process.env.GRAPH_PATH ?? "./data/demo",
+    loadOntology(process.env.ONTOLOGY_PATH ?? "ontology/base.yaml"),
+  );
+} catch (error) {
+  // The engine is single-writer. A running server holds the lock, and the raw
+  // error does not say what to do about it.
+  const message = error instanceof Error ? error.message : String(error);
+  if (/lock|concurren/i.test(message)) {
+    console.error("The graph is open in another process — most likely the server.");
+    console.error("Back up a running deployment through its endpoint instead:");
+    console.error("  curl -X POST -H 'Authorization: Bearer <token>' <host>/admin/backup");
+    console.error("Or stop the server and run this again.");
+    process.exit(1);
+  }
+  throw error;
+}
 
 try {
   const result = await backupGraph(graph, destination);

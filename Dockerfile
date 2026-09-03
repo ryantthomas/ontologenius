@@ -23,6 +23,10 @@ COPY package.json next.config.ts tsconfig.json server.ts ./
 COPY src ./src
 COPY app ./app
 COPY ontology ./ontology
+# Ships the operational commands with the image: `docker exec <container> npm run
+# backup` is what you want available on a running deployment, not something to
+# reconstruct under pressure.
+COPY scripts ./scripts
 
 # Where the graph lives. Mount a volume here — the database is a real file and
 # does not survive a container restart otherwise.

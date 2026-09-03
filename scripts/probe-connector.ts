@@ -99,6 +99,18 @@ const text = await list.text();
 const tools = [...text.matchAll(/"name":"(\w+)"/g)].map((m) => m[1]);
 console.log("5. tools/list:", list.status, tools.join(", "));
 
+// 6b. Optionally exercise the backup endpoint. Off by default: probing a live
+// deployment should not write to it unless that is what you asked for.
+if (process.argv.includes("--backup")) {
+  const backup = await fetch(`${BASE}/admin/backup`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${tokens.access_token}` },
+  });
+  const body = await backup.json();
+  console.log("6b. live backup:", backup.status, JSON.stringify(body));
+  if (!backup.ok) process.exitCode = 1;
+}
+
 // 6. A garbage token must not work.
 const bad = await fetch(`${BASE}/mcp`, {
   method: "POST",

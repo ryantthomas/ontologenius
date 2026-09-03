@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadOntology, openGraph, type Graph } from "../src/graph/db";
 import { addConcepts, addItems, conceptId, openScheme, relate } from "../src/graph/write";
 import {
@@ -31,9 +31,26 @@ const item = (label: string, n: number) => ({
   rationale: `Because of ${label}.`,
 });
 
+/**
+ * Graphs opened by a test, closed when it ends. Each holds a buffer pool, so
+ * leaking them exhausts the address space — non-deterministically, which is
+ * worse than failing outright.
+ */
+const opened: Graph[] = [];
+
+afterEach(async () => {
+  while (opened.length > 0) await opened.pop()!.close();
+});
+
+async function open(): Promise<Graph> {
+  const graph = await openGraph(":memory:", loadOntology("ontology/base.yaml"));
+  opened.push(graph);
+  return graph;
+}
+
 /** A scheme of six concepts, A -> B (prerequisite), each with two items. */
 async function buildGraph(): Promise<Graph> {
-  const graph = await openGraph(":memory:", loadOntology("ontology/base.yaml"));
+  const graph = await open();
   const labels = ["A", "B", "C", "D", "E", "F"];
 
   await openScheme(graph, { id: SCHEME, title: "Test", description: "" });
@@ -166,7 +183,7 @@ describe("recording an answer", () => {
 
 describe("unassessed concepts", () => {
   it("reports concepts carrying no items, since they can never be mastered", async () => {
-    const graph = await openGraph(":memory:", loadOntology("ontology/base.yaml"));
+    const graph = await open();
     await openScheme(graph, { id: SCHEME, title: "Test", description: "" });
     await addConcepts(graph, SCHEME, [concept("A"), concept("B")]);
     await addItems(graph, [item("A", 1)]);
@@ -212,7 +229,7 @@ describe("decomposition", () => {
   it("withholds a whole until its parts are known, then offers it again", async () => {
     // A two-concept graph, so the session's new-material cap cannot confound
     // what is being tested here: availability, not queue composition.
-    const graph = await openGraph(":memory:", loadOntology("ontology/base.yaml"));
+    const graph = await open();
     await openScheme(graph, { id: SCHEME, title: "Test", description: "" });
     await addConcepts(graph, SCHEME, [concept("Whole")]);
     await addItems(graph, [item("Whole", 1)]);
@@ -242,7 +259,6 @@ describe("decomposition", () => {
 
     // The whole is now the sum of what is known.
     expect(await labels()).toContain("Whole");
-    await graph.close();
   });
 
   it("refuses a part-of cycle, since a thing cannot be part of itself", async () => {
